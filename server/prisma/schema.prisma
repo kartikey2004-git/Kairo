@@ -1,0 +1,15 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Each model must have at least one unique criteria that has only required fields. Either mark a single field with `@id`, `@unique` 
+
+model Test {
+  id   String @id @default(cuid())
+  name String
+}
