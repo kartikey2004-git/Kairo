@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Development files
+.git/
+.gitignore
+.npmignore
+
+# Prisma migrations (keep schema.prisma, exclude migrations)
+prisma/migrations/
+
+# Build and cache
+build/
+dist/
+.cache/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files (if you add tests later)
+test/
+tests/
+__tests__/
+coverage/
+
+# Documentation (optional - remove if you want to include)
+*.md
+!README.md
+

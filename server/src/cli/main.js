@@ -6,6 +6,7 @@ import chalk from "chalk";
 import figlet from "figlet";
 import { Command } from "commander";
 import { login, logout, whoami } from "./commands/auth/login.js";
+import { wakeUp } from "./commands/ai/wakeUp.js";
 
 dotenv.config();
 
@@ -24,7 +25,7 @@ async function main() {
 
   const program = new Command("kairo");
 
-  program.version("0.0.1").description("Orbital CLI - A CLI based AI Tool").addCommand(login).addCommand(logout).addCommand(whoami)
+  program.version("0.0.1").description("Kairo CLI - A CLI based AI Tool").addCommand(login).addCommand(logout).addCommand(whoami).addCommand(wakeUp)
 
   program.action(() => {
     program.help();
