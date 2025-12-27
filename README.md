@@ -1,4 +1,4 @@
-# Kairo
+# Kairo : AI agent CLI
 
 ## Project Overview
 
