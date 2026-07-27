@@ -1,36 +1,37 @@
 import chalk from "chalk";
 import boxen from "boxen";
-import { text, isCancel, cancel, intro, outro, confirm } from "@clack/prompts";
-import { AIService } from "../ai/google-service.js";
+import { text, isCancel, intro, outro } from "@clack/prompts";
 import { ChatService } from "../../service/chat.service.js";
 import { getStoredToken } from "../../lib/token.js";
-import prisma from "../../lib/db.js";
-import { generateApplication } from "../../config/agent.config.js";
 
-const aiService = new AIService();
 const chatService = new ChatService();
+const KAIRO_SERVER_URL = process.env.KAIRO_SERVER_URL || "http://localhost:3005";
 
-async function getUserFromToken() {
+async function getAuthedUser() {
   const token = await getStoredToken();
 
   if (!token?.access_token) {
     throw new Error("Not authenticated. Please run 'kairo login' first.");
   }
 
-  const user = await prisma.user.findFirst({
-    where: {
-      sessions: {
-        some: { token: token.access_token },
-      },
-    },
+  const response = await fetch(`${KAIRO_SERVER_URL}/api/me`, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
   });
 
-  if (!user) {
+  if (!response.ok) {
+    throw new Error(
+      `Failed to resolve session (status ${response.status}). Please login again.`
+    );
+  }
+
+  const session = await response.json();
+
+  if (!session?.user) {
     throw new Error("User not found. Please login again.");
   }
 
-  console.log(chalk.green(`\n✓ Welcome back, ${user.name}!\n`));
-  return user;
+  console.log(chalk.green(`\n✓ Welcome back, ${session.user.name}!\n`));
+  return session.user;
 }
 
 async function initConversation(userId, conversationId = null) {
@@ -43,8 +44,8 @@ async function initConversation(userId, conversationId = null) {
   const conversationInfo = boxen(
     `${chalk.bold("Conversation")}: ${conversation.title}\n` +
       `${chalk.gray("ID:")} ${conversation.id}\n` +
-      `${chalk.gray("Mode:")} ${chalk.magenta("Agent (Code Generator)")}\n` +
-      `${chalk.cyan("Working Directory:")} ${process.cwd()}`,
+      `${chalk.gray("Mode:")} ${chalk.magenta("Agent (Tool-Using)")}\n` +
+      `${chalk.cyan("Server:")} ${KAIRO_SERVER_URL}`,
     {
       padding: 1,
       margin: { top: 1, bottom: 1 },
@@ -60,21 +61,102 @@ async function initConversation(userId, conversationId = null) {
   return conversation;
 }
 
-async function saveMessage(conversationId, role, content) {
-  return await chatService.addMessage(conversationId, role, content);
+function toolCallBox(call) {
+  return boxen(
+    `${chalk.cyan("🔧 Tool:")} ${call.toolName}\n${chalk.gray("Args:")} ${JSON.stringify(
+      call.args ?? call.input,
+      null,
+      2
+    )}`,
+    {
+      padding: 1,
+      margin: { top: 1 },
+      borderStyle: "round",
+      borderColor: "cyan",
+      title: "🛠️  Tool Call",
+    }
+  );
+}
+
+function toolResultBox(result) {
+  const resultStr = JSON.stringify(result.result ?? result.output, null, 2) ?? "";
+  return boxen(
+    `${chalk.green("✅ Tool:")} ${result.toolName}\n${chalk.gray("Result:")} ${resultStr.slice(
+      0,
+      500
+    )}${resultStr.length > 500 ? "..." : ""}`,
+    {
+      padding: 1,
+      margin: { bottom: 1 },
+      borderStyle: "round",
+      borderColor: "green",
+      title: "📊 Tool Result",
+    }
+  );
+}
+
+/**
+ * Streams one agent turn over HTTP/SSE from the Kairo server — the CLI never
+ * touches Prisma or the model directly, it only speaks to `/api/agent/*`.
+ */
+async function streamAgentTurn(
+  conversationId,
+  message,
+  { onText, onToolCall, onToolResult, onDone, onError }
+) {
+  const token = await getStoredToken();
+
+  const response = await fetch(
+    `${KAIRO_SERVER_URL}/api/agent/${conversationId}/message`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token.access_token}`,
+      },
+      body: JSON.stringify({ message }),
+    }
+  );
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Agent request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const line = rawEvent.replace(/^data: /, "");
+      if (!line) continue;
+
+      const evt = JSON.parse(line);
+      if (evt.type === "text") onText?.(evt.chunk);
+      else if (evt.type === "tool_call") onToolCall?.(evt.call);
+      else if (evt.type === "tool_result") onToolResult?.(evt.result);
+      else if (evt.type === "error") onError?.(evt.message);
+      else if (evt.type === "done") onDone?.(evt);
+    }
+  }
 }
 
 async function agentLoop(conversation) {
   const helpBox = boxen(
     `${chalk.cyan.bold("What can the agent do?")}\n\n` +
-      `${chalk.gray("• Generate complete applications from descriptions")}\n` +
-      `${chalk.gray("• Create all necessary files and folders")}\n` +
-      `${chalk.gray("• Include setup instructions and commands")}\n` +
-      `${chalk.gray("• Generate production-ready code")}\n\n` +
+      `${chalk.gray("• Read and write files in your sandboxed workspace")}\n` +
+      `${chalk.gray("• Run allowlisted shell commands")}\n` +
+      `${chalk.gray("• Inspect git diffs and create commits")}\n\n` +
       `${chalk.yellow.bold("Examples:")}\n` +
-      `${chalk.white('• "Build a todo app with React and Tailwind"')}\n` +
-      `${chalk.white('• "Create a REST API with Express and MongoDB"')}\n` +
-      `${chalk.white('• "Make a weather app using OpenWeatherMap API"')}\n\n` +
+      `${chalk.white('• "Read package.json and tell me the version field"')}\n` +
+      `${chalk.white('• "Show me the git diff"')}\n\n` +
       `${chalk.gray('Type "exit" to end the session')}`,
     {
       padding: 1,
@@ -89,14 +171,11 @@ async function agentLoop(conversation) {
 
   while (true) {
     const userInput = await text({
-      message: chalk.magenta("🤖 What would you like to build?"),
-      placeholder: "Describe your application...",
+      message: chalk.magenta("🤖 What would you like the agent to do?"),
+      placeholder: "Describe your request...",
       validate(value) {
         if (!value || value.trim().length === 0) {
-          return "Description cannot be empty";
-        }
-        if (value.trim().length < 10) {
-          return "Please provide more details (at least 10 characters)";
+          return "Message cannot be empty";
         }
       },
     });
@@ -119,64 +198,31 @@ async function agentLoop(conversation) {
       title: "👤 Your Request",
       titleAlignment: "left",
     });
-    
+
     console.log(userBox);
 
-    // Save user message
-    await saveMessage(conversation.id, "user", userInput);
+    let sawText = false;
 
     try {
-      // Generate application using structured output
-      const result = await generateApplication(
-        userInput,
-        aiService,
-        process.cwd()
-      );
-
-      if (result && result.success) {
-        // Save successful generation details
-        const responseMessage =
-          `Generated application: ${result.folderName}\n` +
-          `Files created: ${result.files.length}\n` +
-          `Location: ${result.appDir}\n\n` +
-          `Setup commands:\n${result.commands.join("\n")}`;
-
-        await saveMessage(conversation.id, "assistant", responseMessage);
-
-        // Ask if user wants to generate another app
-        const continuePrompt = await confirm({
-          message: chalk.cyan(
-            "Would you like to generate another application?"
-          ),
-          initialValue: false,
-        });
-
-        if (isCancel(continuePrompt) || !continuePrompt) {
-          console.log(
-            chalk.yellow("\n👋 Great! Check your new application.\n")
-          );
-          break;
-        }
-      } else {
-        throw new Error("Generation returned no result");
-      }
+      await streamAgentTurn(conversation.id, userInput, {
+        onText: (chunk) => {
+          if (!sawText) {
+            console.log("\n" + chalk.green.bold("🤖 Assistant:"));
+            console.log(chalk.gray("─".repeat(60)));
+            sawText = true;
+          }
+          process.stdout.write(chunk);
+        },
+        onToolCall: (call) => console.log(toolCallBox(call)),
+        onToolResult: (result) => console.log(toolResultBox(result)),
+        onError: (message) =>
+          console.log(chalk.red(`\n❌ Agent error: ${message}\n`)),
+        onDone: () => {
+          if (sawText) console.log("\n" + chalk.gray("─".repeat(60)) + "\n");
+        },
+      });
     } catch (error) {
       console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
-
-      await saveMessage(
-        conversation.id,
-        "assistant",
-        `Error: ${error.message}`
-      );
-
-      const retry = await confirm({
-        message: chalk.cyan("Would you like to try again?"),
-        initialValue: true,
-      });
-
-      if (isCancel(retry) || !retry) {
-        break;
-      }
     }
   }
 }
@@ -186,7 +232,7 @@ export async function startAgentChat(conversationId = null) {
     intro(
       boxen(
         chalk.bold.magenta("🤖 Kairo AI - Agent Mode\n\n") +
-          chalk.gray("Autonomous Application Generator"),
+          chalk.gray("Tool-using agent (sandboxed file + shell access)"),
         {
           padding: 1,
           borderStyle: "double",
@@ -195,20 +241,7 @@ export async function startAgentChat(conversationId = null) {
       )
     );
 
-    const user = await getUserFromToken();
-
-    // Warning about file system access
-    const shouldContinue = await confirm({
-      message: chalk.yellow(
-        "⚠️  The agent will create files and folders in the current directory. Continue?"
-      ),
-      initialValue: true,
-    });
-
-    if (isCancel(shouldContinue) || !shouldContinue) {
-      cancel(chalk.yellow("Agent mode cancelled"));
-      process.exit(0);
-    }
+    const user = await getAuthedUser();
 
     const conversation = await initConversation(user.id, conversationId);
 

@@ -27,7 +27,8 @@ const DeviceApprovalContent = () => {
   }
 
   if (!data?.session && !data?.user) {
-    router.push("/sign-in");
+    const redirectTarget = `/approve?user_code=${encodeURIComponent(userCode ?? "")}`;
+    router.push(`/sign-in?redirect=${encodeURIComponent(redirectTarget)}`);
     return null;
   }
 

@@ -100,6 +100,18 @@ export class ChatService {
   }
 
   /**
+   * Fetch a conversation only if it belongs to userId — the IDOR guard.
+   * Every route handler must go through this, never prisma.conversation.findUnique directly.
+   * @param {string} conversationId
+   * @param {string} userId
+   */
+  async getOwnedConversation(conversationId, userId) {
+    return await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+    });
+  }
+
+  /**
    * Delete a conversation
    * @param {string} conversationId - Conversation ID
    * @param {string} userId - User ID (for security)
@@ -148,5 +160,18 @@ export class ChatService {
           ? msg.content
           : JSON.stringify(msg.content),
     }));
+  }
+
+  /**
+   * Format messages for the AI SDK's `messages` array specifically.
+   * Unlike `formatMessagesForAI`, this drops `tool_call`/`tool_result` rows —
+   * those exist only for CLI/UI replay (see agent/loop.js), and the AI SDK's
+   * `streamText({ messages })` does not accept arbitrary custom roles.
+   * @param {Array} messages - Database messages
+   */
+  formatMessagesForModel(messages) {
+    return this.formatMessagesForAI(messages).filter((msg) =>
+      ["user", "assistant", "system"].includes(msg.role)
+    );
   }
 }

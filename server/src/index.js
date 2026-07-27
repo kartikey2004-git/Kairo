@@ -3,6 +3,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import dotenv from "dotenv";
 import cors from "cors"; // Import the CORS middleware
 import { auth } from "./lib/auth.js";
+import agentRoutes from "./routes/agent.routes.js";
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.all("/api/auth/*splat", toNodeHandler(auth)); // For ExpressJS v5
 // or only apply it to routes that don't interact with Better Auth
 
 app.use(express.json());
+app.use(agentRoutes);
 
 app.get("/api/me", async (req, res) => {
   const session = await auth.api.getSession({

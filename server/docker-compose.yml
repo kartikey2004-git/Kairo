@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kairo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kairo
+      POSTGRES_PASSWORD: kairo_dev_password
+      POSTGRES_DB: kairo
+    ports:
+      - "5433:5432"
+    volumes:
+      - kairo-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kairo -d kairo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kairo-postgres-data:

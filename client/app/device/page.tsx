@@ -1,16 +1,31 @@
 "use client";
 
 import type React from "react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
-const DeviceAuthorizationPage = () => {
+const formatForDisplay = (raw: string) => {
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  return cleaned.length > 4
+    ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`
+    : cleaned;
+};
+
+const DeviceAuthorizationForm = () => {
   const [userCode, setUserCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const prefill = searchParams.get("user_code");
+    if (prefill) {
+      setUserCode(formatForDisplay(prefill));
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +131,14 @@ const DeviceAuthorizationPage = () => {
         </form>
       </div>
     </div>
+  );
+};
+
+const DeviceAuthorizationPage = () => {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <DeviceAuthorizationForm />
+    </Suspense>
   );
 };
 

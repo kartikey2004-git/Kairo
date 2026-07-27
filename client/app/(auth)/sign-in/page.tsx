@@ -3,12 +3,15 @@
 import LoginForm from "@/components/LoginForm";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
-import React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { Suspense } from "react";
 
-const Page = () => {
+const PageContent = () => {
   const { data, isPending } = authClient.useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get("redirect") || "/";
+
   if (isPending) {
     return (
       <div className="flex flex-col items-center justify-center h-screen">
@@ -18,13 +21,27 @@ const Page = () => {
   }
 
   if (data?.session && data?.user) {
-    router.push("/");
+    router.push(redirectTarget);
   }
 
   return (
     <>
-      <LoginForm />
+      <LoginForm redirectTarget={redirectTarget} />
     </>
+  );
+};
+
+const Page = () => {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center h-screen">
+          <Spinner />
+        </div>
+      }
+    >
+      <PageContent />
+    </Suspense>
   );
 };
 

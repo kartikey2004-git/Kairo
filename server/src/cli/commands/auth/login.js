@@ -213,9 +213,6 @@ async function pollForToken(authClient, deviceCode, clientId, initialInterval) {
         });
 
         if (data?.access_token) {
-          console.log(
-            chalk.bold.yellow(`Your access token: ${data.access_token}`)
-          );
           spinner.stop();
           resolve(data);
           return;

@@ -5,7 +5,11 @@ import { Card, CardContent } from "./ui/card";
 import { authClient } from "@/lib/auth-client";
 import { Github } from "lucide-react";
 
-const LoginForm = () => {
+interface LoginFormProps {
+  redirectTarget?: string;
+}
+
+const LoginForm = ({ redirectTarget = "/" }: LoginFormProps) => {
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center px-6 py-10 bg-linear-to-b from-[#0f0f14] to-[#14141c]">
       {/* Hero */}
@@ -30,7 +34,7 @@ const LoginForm = () => {
               onClick={() =>
                 authClient.signIn.social({
                   provider: "github",
-                  callbackURL: "http://localhost:3000",
+                  callbackURL: `http://localhost:3000${redirectTarget}`,
                 })
               }
             >
